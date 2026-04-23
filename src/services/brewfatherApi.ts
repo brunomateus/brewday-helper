@@ -34,31 +34,46 @@ async function patchIngredient(
   return response.text();
 }
 
+export interface UpdateResult {
+  name: string;
+  success: boolean;
+  error?: string;
+}
+
 export async function updateBrewfatherInventory(
   userId: string,
   apiKey: string,
   recipe: Recipe
-) {
-  const results = [];
+): Promise<UpdateResult[]> {
+  const results: Promise<UpdateResult>[] = [];
+
+  const update = async (name: string, type: 'fermentables' | 'hops' | 'yeasts' | 'miscs', id: string, amount: number) => {
+    try {
+      await patchIngredient(userId, apiKey, type, id, amount);
+      return { name, success: true };
+    } catch (error: any) {
+      return { name, success: false, error: error.message || String(error) };
+    }
+  };
 
   for (const f of recipe.fermentables) {
     // The amount in the recipe is in kg, but the API expects kg
-    results.push(patchIngredient(userId, apiKey, 'fermentables', f._id, f.amount));
+    results.push(update(f.name, 'fermentables', f._id, f.amount));
   }
 
   for (const h of recipe.hops) {
     // The amount in the recipe is in g, the API expects g
-    results.push(patchIngredient(userId, apiKey, 'hops', h._id, h.amount));
+    results.push(update(h.name, 'hops', h._id, h.amount));
   }
 
   for (const y of recipe.yeasts) {
     // The amount is in packages
-    results.push(patchIngredient(userId, apiKey, 'yeasts', y._id, y.amount));
+    results.push(update(y.name, 'yeasts', y._id, y.amount));
   }
 
   for (const m of recipe.miscs) {
     // The amount is in g or items, the API expects the same unit
-    results.push(patchIngredient(userId, apiKey, 'miscs', m._id, m.amount));
+    results.push(update(m.name, 'miscs', m._id, m.amount));
   }
 
   return Promise.all(results);

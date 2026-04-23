@@ -13,15 +13,18 @@ import type { Recipe, Fermentable, Hop, Yeast, Misc } from '../types/brewfather'
 import type { BrewShopData, ShopProduct } from '../types/brewshop'
 import { storeToRefs } from 'pinia';
 import { useUserStore } from '../stores/user';
-import { updateBrewfatherInventory } from '../services/brewfatherApi';
+import { updateBrewfatherInventory, type UpdateResult } from '../services/brewfatherApi';
+import { useToast } from 'primevue/usetoast';
 
 
 const userStore = useUserStore();
+const toast = useToast();
 
 const { userId: brewfatherUserId, apiKey: brewfatherApiKey } = storeToRefs(userStore);
 const recipe = ref<Recipe | null>(null);
 const shopData = ref<BrewShopData | null>(null);
 const isUpdatingStock = ref(false);
+const updateResults = ref<UpdateResult[] | null>(null);
 
 const selectedFermentables = ref<string[]>([]);
 const selectedHops = ref<string[]>([]);
@@ -197,14 +200,17 @@ const whatsAppMessage = computed(() => {
 const copyMessage = () => {
   if (navigator.clipboard) {
     navigator.clipboard.writeText(whatsAppMessage.value)
-      .then(() => alert('Mensagem copiada para a área de transferência!'))
-      .catch(err => console.error('Error copying message to clipboard:', err));
+      .then(() => toast.add({ severity: 'success', summary: 'Sucesso', detail: 'Mensagem copiada para a área de transferência!', life: 3000 }))
+      .catch(err => {
+        console.error('Error copying message to clipboard:', err);
+        toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha ao copiar a mensagem.', life: 3000 });
+      });
   }
 };
 
 const updateStock = async () => {
   if (!recipe.value || !brewfatherUserId.value || !brewfatherApiKey.value) {
-    alert('Por favor, carregue uma receita e insira suas credenciais da API do Brewfather.');
+    toast.add({ severity: 'warn', summary: 'Atenção', detail: 'Por favor, carregue uma receita e insira suas credenciais da API do Brewfather.', life: 5000 });
     return;
   }
   
@@ -235,12 +241,20 @@ const updateStock = async () => {
   };
 
   isUpdatingStock.value = true;
+  updateResults.value = null;
   try {
-    await updateBrewfatherInventory(brewfatherUserId.value, brewfatherApiKey.value, recipeForUpdate);
-    alert('Estoque do Brewfather atualizado com sucesso!');
+    const results = await updateBrewfatherInventory(brewfatherUserId.value, brewfatherApiKey.value, recipeForUpdate);
+    updateResults.value = results;
+    
+    const hasErrors = results.some(r => !r.success);
+    if (hasErrors) {
+      toast.add({ severity: 'warn', summary: 'Atenção', detail: 'Alguns itens não puderam ser atualizados. Verifique os resultados na tela.', life: 5000 });
+    } else {
+      toast.add({ severity: 'success', summary: 'Sucesso', detail: 'Estoque do Brewfather atualizado com sucesso!', life: 3000 });
+    }
   } catch (error) {
     console.error('Failed to update Brewfather inventory:', error);
-    alert(`Falha ao atualizar o estoque do Brewfather: ${error}`);
+    toast.add({ severity: 'error', summary: 'Erro', detail: `Erro inesperado ao atualizar o estoque: ${error}`, life: 5000 });
   } finally {
     isUpdatingStock.value = false;
   }
@@ -399,7 +413,21 @@ const updateStock = async () => {
           </div>
           <div class="col-12 md:col-6">
             <h5>Atualização de Estoque</h5>
-            <div v-if="recipe">
+            <div v-if="updateResults">
+              <p>Resultados da atualização:</p>
+              <ul class="list-none p-0 m-0">
+                <li v-for="result in updateResults" :key="result.name" class="mb-2">
+                  <span v-if="result.success" class="text-green-600 font-bold">
+                    <i class="pi pi-check text-green-600"></i> {{ result.name }}: Sucesso
+                  </span>
+                  <span v-else class="text-red-600 font-bold">
+                    <i class="pi pi-times text-red-600"></i> {{ result.name }}: Falha <span class="font-normal">({{ result.error }})</span>
+                  </span>
+                </li>
+              </ul>
+              <Button label="Limpar Resultados" class="p-button-secondary p-button-sm mt-3" @click="updateResults = null" />
+            </div>
+            <div v-else-if="recipe">
               <p>Itens selecionados para atualizar o estoque:</p>
               <ul>
                 <li v-for="f in recipe.fermentables.filter(i => selectedFermentables.includes(i.name))" :key="f.name">{{ f.name }}</li>
@@ -409,7 +437,7 @@ const updateStock = async () => {
               </ul>
             </div>
             <p v-else>Os ingredientes da receita aparecerão aqui para confirmação.</p>
-            <Button label="Atualizar Estoque no Brewfather" icon="pi pi-cloud-upload" class="p-button-success" @click="updateStock" :disabled="!recipe || isUpdatingStock" :loading="isUpdatingStock" />
+            <Button v-if="!updateResults" label="Atualizar Estoque no Brewfather" icon="pi pi-cloud-upload" class="p-button-success" @click="updateStock" :disabled="!recipe || isUpdatingStock" :loading="isUpdatingStock" />
           </div>
         </div>
       </Panel>
