@@ -72,6 +72,26 @@ const onRecipeUpload = (event: FileUploadUploaderEvent) => {
     readFile(file, (result) => {
       try {
         const parsedRecipe = JSON.parse(result);
+        
+        const aggregateIngredients = (ingredients: any[]) => {
+          if (!ingredients) return [];
+          const map = new Map();
+          for (const item of ingredients) {
+            if (map.has(item.name)) {
+              const existing = map.get(item.name);
+              existing.amount += item.amount;
+            } else {
+              map.set(item.name, { ...item });
+            }
+          }
+          return Array.from(map.values());
+        };
+
+        parsedRecipe.fermentables = aggregateIngredients(parsedRecipe.fermentables);
+        parsedRecipe.hops = aggregateIngredients(parsedRecipe.hops);
+        parsedRecipe.yeasts = aggregateIngredients(parsedRecipe.yeasts);
+        parsedRecipe.miscs = aggregateIngredients(parsedRecipe.miscs);
+
         recipe.value = parsedRecipe;
         // Select all ingredients by default
         selectedFermentables.value = parsedRecipe.fermentables.map((i: Fermentable) => i.name);
