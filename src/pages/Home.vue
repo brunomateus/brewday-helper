@@ -15,6 +15,9 @@ import { storeToRefs } from 'pinia';
 import { useUserStore } from '../stores/user';
 import { updateBrewfatherInventory, type UpdateResult } from '../services/brewfatherApi';
 import { useToast } from 'primevue/usetoast';
+import { getHopAmountInGrams, getHopPackageSize } from '../utils/hopUtils';
+import { useWhatsApp } from '../composables/useWhatsApp';
+import { readFileAsText } from '../utils/fileUtils';
 
 
 const userStore = useUserStore();
@@ -55,21 +58,13 @@ const shopMaltes = computed(() => {
 const shopHops = computed(() => shopData.value?.produtos.lupulos || []);
 const shopYeasts = computed(() => shopData.value?.produtos.leveduras || []);
 
-const getHopAmountInGrams = (hop: Hop) => {
-    const hopPackageSize = hop.name.toLowerCase().includes('(25g)') ? 25 : 50;
-    const packagesNeeded = Math.ceil(hop.amount / hopPackageSize);
-    return packagesNeeded * hopPackageSize;
-}
 
-const getHopPackageSize = (hop: Hop) => {
-    return hop.name.toLowerCase().includes('(25g)') ? 25 : 50;
-}
 
 const onRecipeUpload = (event: FileUploadUploaderEvent) => {
   if(event.files && Array.isArray(event.files)) {
     const file = event.files[0];
     if (!file) return;
-    readFile(file, (result) => {
+    readFileAsText(file, (result) => {
       try {
         const parsedRecipe = JSON.parse(result);
         
@@ -111,7 +106,7 @@ const onShopProductsUpload = (event: FileUploadUploaderEvent) => {
   if(event.files && Array.isArray(event.files)) {
     const file = event.files[0];
     if (!file) return;
-    readFile(file, (result) => {
+    readFileAsText(file, (result) => {
       try {
         shopData.value = JSON.parse(result);
       } catch (error) {
@@ -119,16 +114,6 @@ const onShopProductsUpload = (event: FileUploadUploaderEvent) => {
       }
     });
   }
-};
-
-const readFile = (file: File, callback: (result: string) => void) => {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    if (e.target?.result) {
-      callback(e.target.result as string);
-    }
-  };
-  reader.readAsText(file);
 };
 
 const initializeIngredientsState = () => {
@@ -182,51 +167,7 @@ const changeProduct = (ingredientName: string) => {
     ingredientUiMode[ingredientName] = 'select';
 };
 
-const whatsAppMessage = computed(() => {
-  if (!recipe.value) return 'O pedido para a loja aparecerá aqui...';
-
-  let message = `Olá! Gostaria de fazer um pedido para a receita "${recipe.value.name}".\n\n`;
-
-  const createIngredientLine = (name: string, amount: number, unit: string) => `${name}: ${amount} ${unit}\n`;
-
-  const fermentables = recipe.value.fermentables.filter(f => selectedFermentables.value.includes(f.name));
-  if (fermentables.length > 0) {
-    message += '--- Fermentáveis ---\n';
-    fermentables.forEach(f => message += createIngredientLine(f.name, f.amount, 'kg'));
-  }
-
-  const hops = recipe.value.hops.filter(h => selectedHops.value.includes(h.name));
-  if (hops.length > 0) {
-    message += '\n--- Lúpulos ---\n';
-    hops.forEach(h => message += createIngredientLine(h.name, getHopAmountInGrams(h), 'g'));
-  }
-
-  const yeasts = recipe.value.yeasts.filter(y => selectedYeasts.value.includes(y.name));
-  if (yeasts.length > 0) {
-    message += '\n--- Leveduras ---\n';
-    yeasts.forEach(y => message += createIngredientLine(y.name, y.amount, y.amount > 1 ? 'pacotes' : 'pacote'));
-  }
-
-  const miscs = recipe.value.miscs.filter(m => selectedMiscs.value.includes(m.name));
-  if (miscs.length > 0) {
-    message += '\n--- Miscelânea ---\n';
-    miscs.forEach(m => message += createIngredientLine(m.name, m.amount, m.unit));
-  }
-
-  message += '\nObrigado!';
-  return message;
-});
-
-const copyMessage = () => {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(whatsAppMessage.value)
-      .then(() => toast.add({ severity: 'success', summary: 'Sucesso', detail: 'Mensagem copiada para a área de transferência!', life: 3000 }))
-      .catch(err => {
-        console.error('Error copying message to clipboard:', err);
-        toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha ao copiar a mensagem.', life: 3000 });
-      });
-  }
-};
+const { whatsAppMessage, copyMessage } = useWhatsApp(recipe, selectedFermentables, selectedHops, selectedYeasts, selectedMiscs);
 
 const updateStock = async () => {
   if (!recipe.value || !brewfatherUserId.value || !brewfatherApiKey.value) {
