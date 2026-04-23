@@ -27,8 +27,18 @@ async function patchIngredient(
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`Failed to update ${ingredientType}: ${errorData.message}`);
+    if (response.status === 404) {
+      throw new Error(`Não encontrado no estoque. Adicione-o manualmente primeiro.`);
+    }
+    
+    let errorMessage = response.statusText;
+    try {
+      const errorData = await response.json();
+      if (errorData && errorData.message) errorMessage = errorData.message;
+    } catch {
+      // Ignore JSON parse error if response is not JSON
+    }
+    throw new Error(`Falha ao atualizar (${errorMessage})`);
   }
 
   return response.text();
